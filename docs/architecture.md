@@ -17,7 +17,7 @@
 
 ## Storage
 
-- **Location.** `resolveRoot()` follows `git rev-parse --git-common-dir`, so linked worktrees share one tracker. `AGENT_FLOW_HOME` overrides the location.
+- **Location.** `resolveRoot()` follows `git rev-parse --git-common-dir`, so linked worktrees share one tracker. `AGENT_FLOW_HOME` overrides the location. Outside git it walks up looking for `.agent-flow/`, but stops at the home folder without checking it: `~/.agent-flow/` holds the workspace registry and the hub token, not a project tracker. For the same reason `init` refuses the home folder unless it is named explicitly, with `--allow-home` or `AGENT_FLOW_HOME`.
 - **`node:sqlite`.** The tracker uses Node's built-in SQLite, so there are no native modules and no ABI rebuilds. Settings: WAL, `busy_timeout = 10s`, foreign keys on. Migrations are append-only and keyed on `PRAGMA user_version`.
 - **Tables.**
   - Work items: `tickets`, `acceptance_criteria`, `deps` (kinds `blocks`, `parent`, `discovered-from`), `comments` (kinds `note`, `handoff`, `review`, `system`).

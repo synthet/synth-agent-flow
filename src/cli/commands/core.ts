@@ -74,14 +74,14 @@ register(
     name: "init",
     group: "setup",
     summary: "Create .agent-flow/ (config, snapshot, gitignore) in the repo root",
-    usage: "init [--prefix af] [--dod 'npm test' ...] [--no-review]",
-    options: { prefix: { type: "string" }, dod: { type: "string", multiple: true }, "no-review": { type: "boolean" } },
+    usage: "init [--prefix af] [--dod 'npm test' ...] [--no-review] [--allow-home]",
+    options: { prefix: { type: "string" }, dod: { type: "string", multiple: true }, "no-review": { type: "boolean" }, "allow-home": { type: "boolean" } },
     run(ctx) {
       const overrides: Record<string, unknown> = {};
       if (str(ctx.values.prefix)) overrides.prefix = str(ctx.values.prefix);
       if (multi(ctx.values.dod).length) overrides.dod = multi(ctx.values.dod);
       if (bool(ctx.values["no-review"])) overrides.requireReview = false;
-      const { paths, created } = initWorkspace(ctx.cwd, overrides);
+      const { paths, created } = initWorkspace(ctx.cwd, overrides, { allowHome: bool(ctx.values["allow-home"]) });
       const entry = registerQuietly(paths.root);
       ctx.print({ root: paths.root, dir: paths.dir, created, workspace: entry?.id ?? null }, () =>
         created

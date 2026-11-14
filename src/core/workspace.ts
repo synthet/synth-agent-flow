@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { defaultConfig, loadConfig, saveConfig, type FlowConfig } from "./config.js";
 import { FlowError } from "./errors.js";
-import { flowPaths, git, resolveRoot, type FlowPaths } from "./paths.js";
+import { flowPaths, git, resolveRoot, samePath, type FlowPaths } from "./paths.js";
 import { FlowStore } from "./store.js";
 
 export interface Workspace {
@@ -57,8 +58,23 @@ export function detectDefaultBranch(root: string): string {
   return "main";
 }
 
-export function initWorkspace(cwd: string, overrides: Partial<FlowConfig> = {}): { paths: FlowPaths; created: boolean } {
-  const root = resolveRoot(cwd);
+export function initWorkspace(
+  cwd: string,
+  overrides: Partial<FlowConfig> = {},
+  opts: { home?: string; allowHome?: boolean } = {},
+): { paths: FlowPaths; created: boolean } {
+  const home = opts.home ?? os.homedir();
+  const root = resolveRoot(cwd, { home });
+  // Naming the root explicitly (AGENT_FLOW_HOME, or --allow-home) is a choice; landing on home from a cwd is an accident.
+  const explicit = Boolean(process.env.AGENT_FLOW_HOME) || opts.allowHome === true;
+  if (samePath(root, home) && !explicit) {
+    throw new FlowError("INVALID_ARGUMENT", `refusing to initialise the home folder ${root}: its .agent-flow/ holds the user-level workspace registry`, {
+      nextSteps: [
+        "run agent-flow init inside a project (a git repository)",
+        "to put a tracker in your home folder anyway, name it explicitly: --allow-home, or AGENT_FLOW_HOME=<home>",
+      ],
+    });
+  }
   const paths = flowPaths(root);
   const created = !existsSync(paths.config);
   mkdirSync(paths.dir, { recursive: true });
