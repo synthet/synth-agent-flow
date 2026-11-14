@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { main } from "../src/cli/main.js";
 import { FlowError } from "../src/core/errors.js";
-import { resolveRoot } from "../src/core/paths.js";
+import { resolveRoot, samePath } from "../src/core/paths.js";
 import { initWorkspace } from "../src/core/workspace.js";
 import { tempDir } from "./helpers.js";
 
@@ -61,6 +61,9 @@ describe("the home folder is not a tracker root", () => {
   it("initWorkspace from a non-git folder under home initialises that folder, not home", () => {
     const home = fakeHome();
     const tmp = nonGitDir(home, "AppData", "Local", "Temp", "af-y");
+    // Guard before writing: the fake home lives under the real one (the OS temp dir), so on a broken resolveRoot this
+    // init would land in the real ~/.agent-flow. Fail here instead.
+    expect(resolveRoot(tmp, { home })).toBe(path.resolve(tmp));
     expect(initWorkspace(tmp, {}, { home }).paths.root).toBe(path.resolve(tmp));
     expect(existsSync(path.join(home, ".agent-flow", "config.json"))).toBe(false);
   });
@@ -101,5 +104,34 @@ describe("agent-flow init in the home folder", () => {
     const allowed = await run(["init", "--allow-home", "-C", home]);
     expect(allowed.code).toBe(0);
     expect(existsSync(path.join(home, ".agent-flow", "config.json"))).toBe(true);
+  });
+
+  it("accepts the home folder named explicitly through AGENT_FLOW_HOME", async () => {
+    const other = tempDir("af-cwd-");
+    process.env.AGENT_FLOW_HOME = home;
+    const res = await run(["init", "-C", other]);
+    expect(res.code).toBe(0);
+    expect(existsSync(path.join(home, ".agent-flow", "config.json"))).toBe(true);
+    expect(existsSync(path.join(other, ".agent-flow"))).toBe(false);
+  });
+});
+
+describe("samePath", () => {
+  it("ignores case on Windows and trailing separators", () => {
+    const dir = tempDir("af-same-");
+    expect(samePath(dir, `${dir}${path.sep}`)).toBe(true);
+    if (process.platform === "win32") expect(samePath(dir, dir.toUpperCase())).toBe(true);
+    expect(samePath(dir, path.join(dir, "child"))).toBe(false);
+  });
+
+  it("follows symlinks to the real folder", () => {
+    const dir = tempDir("af-real-");
+    const link = path.join(tempDir("af-link-"), "home-link");
+    try {
+      symlinkSync(dir, link, "junction");
+    } catch {
+      return; // no symlink rights on this machine
+    }
+    expect(samePath(link, dir)).toBe(true);
   });
 });

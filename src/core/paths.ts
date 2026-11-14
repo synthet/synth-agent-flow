@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -25,10 +25,19 @@ export function git(cwd: string, args: string[]): string | null {
   }
 }
 
-/** True when `a` and `b` name the same directory (case-insensitive on Windows). */
+/**
+ * True when `a` and `b` name the same directory: real paths where they exist (symlinks, `subst` drives, 8.3 short
+ * names), case-insensitive on Windows, trailing separators ignored.
+ */
 export function samePath(a: string, b: string): boolean {
   const norm = (p: string) => {
-    const r = path.resolve(p).replace(/[\\/]+$/, "");
+    let r = path.resolve(p);
+    try {
+      r = realpathSync.native(r);
+    } catch {
+      // A path that doesn't exist yet compares as written.
+    }
+    r = r.replace(/[\\/]+$/, "");
     return process.platform === "win32" ? r.toLowerCase() : r;
   };
   return norm(a) === norm(b);

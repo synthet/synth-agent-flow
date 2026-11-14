@@ -65,9 +65,14 @@ export function initWorkspace(
 ): { paths: FlowPaths; created: boolean } {
   const home = opts.home ?? os.homedir();
   const root = resolveRoot(cwd, { home });
-  if (samePath(root, home) && !opts.allowHome) {
+  // Naming the root explicitly (AGENT_FLOW_HOME, or --allow-home) is a choice; landing on home from a cwd is an accident.
+  const explicit = Boolean(process.env.AGENT_FLOW_HOME) || opts.allowHome === true;
+  if (samePath(root, home) && !explicit) {
     throw new FlowError("INVALID_ARGUMENT", `refusing to initialise the home folder ${root}: its .agent-flow/ holds the user-level workspace registry`, {
-      nextSteps: ["run agent-flow init inside a project (a git repository)", "pass --allow-home if you really want a tracker in your home folder"],
+      nextSteps: [
+        "run agent-flow init inside a project (a git repository)",
+        "to put a tracker in your home folder anyway, name it explicitly: --allow-home, or AGENT_FLOW_HOME=<home>",
+      ],
     });
   }
   const paths = flowPaths(root);
