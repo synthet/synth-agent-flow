@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export const FLOW_DIRNAME = ".agent-flow";
@@ -24,15 +25,29 @@ export function git(cwd: string, args: string[]): string | null {
   }
 }
 
+/** True when `a` and `b` name the same directory (case-insensitive on Windows). */
+export function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const r = path.resolve(p).replace(/[\\/]+$/, "");
+    return process.platform === "win32" ? r.toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
+}
+
 /**
  * Resolve the tracker root:
  * 1. `AGENT_FLOW_HOME` (a project directory) wins.
  * 2. Inside git: the directory that owns the common `.git` dir, so linked worktrees share the DB.
  * 3. Otherwise walk up looking for `.agent-flow/`; fall back to cwd.
+ *
+ * The walk stops at the home folder without checking it: `~/.agent-flow` holds user-level state (the workspace
+ * registry and the hub token), not a project tracker, and nothing above home is a project. Without this, any non-git folder under home, the OS temp dir included, resolved
+ * to home, and `init` there turned the home folder into a tracker that every such folder then shared.
  */
-export function resolveRoot(cwd: string = process.cwd()): string {
-  const home = process.env.AGENT_FLOW_HOME;
-  if (home) return path.resolve(home);
+export function resolveRoot(cwd: string = process.cwd(), opts: { home?: string } = {}): string {
+  const explicit = process.env.AGENT_FLOW_HOME;
+  if (explicit) return path.resolve(explicit);
+  const userHome = opts.home ?? os.homedir();
   const common = git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   if (common) {
     if (path.basename(common) === ".git") return path.dirname(common);
@@ -41,6 +56,7 @@ export function resolveRoot(cwd: string = process.cwd()): string {
   }
   let dir = path.resolve(cwd);
   for (;;) {
+    if (samePath(dir, userHome)) return path.resolve(cwd);
     if (existsSync(path.join(dir, FLOW_DIRNAME))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return path.resolve(cwd);
