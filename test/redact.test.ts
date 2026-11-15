@@ -34,8 +34,30 @@ describe("scrubMachinePaths", () => {
   });
 
   it.each([
+    // A spaced last segment before a closing delimiter or the end (review of af-iil8q).
+    ['"C:\\Users\\First Last"', '"<path>"'],
+    ["`C:\\Users\\First Last`", "`<path>`"],
+    ["'C:\\Users\\First Last'", "'<path>'"],
+    ['cd "C:\\Users\\First Last"', 'cd "<path>"'],
+    ["PS C:\\Users\\First Last> dir", "PS <path>> dir"],
+    ['{"t":"C:\\\\Users\\\\First Last"}', '{"t":"<path>"}'],
+    ["home is C:\\Users\\First Last", "home is <path>"],
+    ["x86 C:\\Program Files (x86)\\Tool\\a.exe run", "x86 <path> run"],
+    // Lower-case Git Bash users/home folders.
+    ["bash /c/users/alice/x ok", "bash <path> ok"],
+    ["bash /d/home/bob/.ssh ok", "bash <path> ok"],
+  ])("replaces %j (closing delimiters, x86, lower-case mounts)", (input, expected) => {
+    expect(scrubMachinePaths(input)).toBe(expected);
+  });
+
+  it.each([
     ["see D:\\x for and/or more", "see <path> for and/or more"],
     ["D:/Projects/workspace map", "<path> map"],
+    // A backslash path continues only across backslashes, so slash-words after it stay prose.
+    ["at D:\\x 3/4 done", "at <path> 3/4 done"],
+    ["D:\\x A/B testing", "<path> A/B testing"],
+    ["see D:\\x Then/Now ok", "see <path> Then/Now ok"],
+    ["ran C:\\x I/O bound", "ran <path> I/O bound"],
   ])("stops a path at prose: %j", (input, expected) => {
     expect(scrubMachinePaths(input)).toBe(expected);
   });
@@ -44,6 +66,9 @@ describe("scrubMachinePaths", () => {
     "pick a/b or /a/b and 3/4, and/or",
     "/tmp/x and /var/log/syslog",
     "the /c/ switch and /d/x in prose",
+    "the /I/O path",
+    "regex \\\\s\\S here and use \\\\w\\d",
+    "escaped relative .\\\\src\\x stays",
     "src/core/store.ts:120 and docs/specs/software-factory/tasks.md#T-1",
     "https://github.com/synthet/synthet-agent-flow/pull/26",
     "~/.claude/skills/next-steps and ~/.agents/skills",
