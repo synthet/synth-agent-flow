@@ -54,6 +54,7 @@ Your actor id looks like `claude:1a2b3c4d`. If the hooks are installed they inje
     agent-flow export
     ```
     The re-exported snapshot carries current ticket states. Commit it in a `chore(tracker)` PR, never straight to the default branch.
+    Keep the snapshot in **one open PR at a time**. Leave it out of the others and re-export after each merge. Why: GitHub's merge ignores the `merge=union` rule in `.gitattributes`, so two open PRs that both change `tickets.jsonl` conflict.
 
 ## Lifecycle at a glance
 `backlog → ready → claimed → in_progress → review → done` (plus `blocked`, `cancelled`).
