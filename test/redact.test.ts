@@ -46,6 +46,30 @@ describe("scrubMachinePaths", () => {
     // Lower-case Git Bash users/home folders.
     ["bash /c/users/alice/x ok", "bash <path> ok"],
     ["bash /d/home/bob/.ssh ok", "bash <path> ok"],
+    // Line breaks, sentence punctuation and table cells close a spaced path too (second review of af-iil8q).
+    ["cd C:\\Users\\First Last\nnext", "cd <path>\nnext"],
+    ["cd C:\\Users\\First Last\r\nnext", "cd <path>\r\nnext"],
+    ["- D:\\Program Files\n- item", "- <path>\n- item"],
+    ["/home/First Last\nx", "<path>\nx"],
+    ["See C:\\Users\\First Last, then", "See <path>, then"],
+    ["See C:\\Users\\First Last; then", "See <path>; then"],
+    ["See C:\\Users\\First Last: then", "See <path>: then"],
+    ["Is it C:\\Users\\First Last? yes", "Is it <path>? yes"],
+    ["at C:\\Users\\First Last. Next we ran", "at <path>. Next we ran"],
+    ["| C:\\Users\\First Last | note |", "| <path> | note |"],
+    // The folder after Users/home is a username: capitalised words after it belong to it, whatever follows.
+    ["C:\\Users\\First Last and then", "<path> and then"],
+    ['"C:\\Users\\First Last "', '"<path> "'],
+    ["C:\\users\\Anne Marie Smith ran it", "<path> ran it"],
+    ["/home/First Last and more", "<path> and more"],
+    ["/Users/First Last is the mac home", "<path> is the mac home"],
+    ["bash /c/users/First Last/x ok", "bash <path> ok"],
+    ["wsl /mnt/c/Users/First Last and on", "wsl <path> and on"],
+    ['{"p":"C:\\\\Users\\\\First Last and"}', '{"p":"<path> and"}'],
+    // Upper-case Git Bash drive letters.
+    ["bash /C/Users/alice/x ok", "bash <path> ok"],
+    ["bash /C/home/bob ok", "bash <path> ok"],
+    ["bash /D/Projects/x ok", "bash <path> ok"],
   ])("replaces %j (closing delimiters, x86, lower-case mounts)", (input, expected) => {
     expect(scrubMachinePaths(input)).toBe(expected);
   });
@@ -67,6 +91,7 @@ describe("scrubMachinePaths", () => {
     "/tmp/x and /var/log/syslog",
     "the /c/ switch and /d/x in prose",
     "the /I/O path",
+    "an /A/B testing note",
     "regex \\\\s\\S here and use \\\\w\\d",
     "escaped relative .\\\\src\\x stays",
     "src/core/store.ts:120 and docs/specs/software-factory/tasks.md#T-1",
