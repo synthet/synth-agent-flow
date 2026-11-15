@@ -120,8 +120,75 @@ describe("scrubMachinePaths: the exporting machine's own home folder (exact)", (
     expect(scrubMachinePaths(input, { homes })).toBe(expected);
   });
 
-  it("does not match a longer folder name that only starts with the home path", () => {
-    expect(scrubMachinePaths("C:\\Users\\admin 01xyz\\a", { homes })).not.toBe("<path>yz\\a");
+  it("leaves a longer sibling folder to the user-name patterns, which replace it whole", () => {
+    expect(scrubMachinePaths("C:\\Users\\admin 01xyz\\a", { homes })).toBe("<path>");
+  });
+});
+
+describe("scrubMachinePaths: exact home pass, review-4 fixes", () => {
+  it.each([
+    "C:\\Users\\jean-luc", "/home/first-last", "C:\\Users\\a.b", "C:\\Users\\a+b", "C:\\Users\\a(b)",
+    "C:\\Users\\a[b]", "C:\\Users\\a$b", "C:\\Users\\a^b", "C:\\Users\\a{b}", "C:\\Users\\a|b", "C:\\Users\\a*b?",
+  ])("never throws, and replaces the home %j", (home) => {
+    const sep = home.startsWith("/") ? "/" : "\\";
+    expect(() => scrubMachinePaths("plain text, no path", { homes: [home] })).not.toThrow();
+    expect(scrubMachinePaths(`at ${home}${sep}x ok`, { homes: [home] })).toBe("at <path> ok");
+  });
+
+  it("survives a hyphenated home through the default (USERPROFILE/HOME) path", () => {
+    const saved = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+    process.env.USERPROFILE = "C:\\Users\\jean-luc";
+    process.env.HOME = "/home/jean-luc";
+    try {
+      expect(scrubMachinePaths("plain text, no path")).toBe("plain text, no path");
+      expect(scrubMachinePaths("at C:\\Users\\jean-luc\\x ok")).toBe("at <path> ok");
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  // The home is a prefix of a longer user name or folder: the exact pass steps aside and the user-name patterns
+  // replace the whole thing.
+  const prefix = { homes: ["C:\\Users\\First"] };
+  it.each([
+    ["C:\\Users\\First Last\\x ok", "<path> ok"],
+    ['"C:\\Users\\First Last"', '"<path>"'],
+    ["C:/Users/First Last/x ok", "<path> ok"],
+    ["/c/Users/First Last/x ok", "<path> ok"],
+    ["C:\\Users\\First 2\\x ok", "<path> ok"],
+    ["C:\\Users\\First2\\a ok", "<path> ok"],
+    ["C:\\Users\\First-old\\a ok", "<path> ok"],
+    ["C:\\Users\\First.old\\a ok", "<path> ok"],
+    ["C:\\Users\\First\\a ok", "<path> ok"],
+    ["home C:\\Users\\First. Next", "home <path>. Next"],
+    ["see C:\\Users\\First, then", "see <path>, then"],
+  ])("with home C:\\Users\\First: %j", (input, expected) => {
+    expect(scrubMachinePaths(input, prefix)).toBe(expected);
+  });
+
+  // A lower-case home: the heuristics alone would stop at the lower-case word, so the exact pass takes siblings.
+  const lower = { homes: ["C:\\Users\\first last"] };
+  it.each([
+    ["C:\\Users\\first last2\\x ok", "<path> ok"],
+    ["C:\\Users\\first last-old\\x ok", "<path> ok"],
+    ["C:\\Users\\first last_bak\\x ok", "<path> ok"],
+    ["C:\\Users\\first last.old\\x ok", "<path> ok"],
+    ["C:\\Users\\first last 2\\x ok", "<path> ok"],
+    ["C:\\Users\\first lasté\\x ok", "<path> ok"],
+    ["C:\\Users\\first last. Next", "<path>. Next"],
+    ["xC:\\Users\\first last", "x<path>"],
+    ["D:\\backupC:\\Users\\first last\\x", "<path><path>"],
+  ])("with lower-case home C:\\Users\\first last: %j", (input, expected) => {
+    expect(scrubMachinePaths(input, lower)).toBe(expected);
+  });
+
+  it("matches a POSIX home case-sensitively", () => {
+    const posix = { homes: ["/Users/bob"] };
+    expect(scrubMachinePaths("route /users/bob/posts here", posix)).toBe("route /users/bob/posts here");
+    expect(scrubMachinePaths("at /Users/bob/x ok", posix)).toBe("at <path> ok");
   });
 
   it("uses this machine's home folder by default", () => {

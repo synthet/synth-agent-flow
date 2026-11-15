@@ -8,9 +8,11 @@
  *
  * Two passes:
  * 1. **Exact.** The exporting machine's own home folder (`os.homedir()`, `USERPROFILE`, `HOME`) is replaced in
- *    every form an agent writes it: back or forward slashes, JSON-escaped, Git Bash `/c/…` and WSL `/mnt/c/…`,
- *    case-insensitively, plus whatever path follows it. That is the leak that matters most, and an exact
- *    match doesn't depend on how the name is spelled.
+ *    every form an agent writes it: back or forward slashes, JSON-escaped, Git Bash `/c/…` and WSL `/mnt/c/…`.
+ *    Windows homes match case-insensitively, POSIX homes case-sensitively. The replacement also takes the rest
+ *    of a longer folder or user name (`<home>2`, `<home>.old`, `<home> Last`) and the path after it, wherever
+ *    it appears. That is the leak that matters most, and an exact match doesn't depend on how the name is
+ *    spelled. Any character in the home is escaped safely (`jean-luc`, `a(b)`, `a+b`).
  * 2. **Heuristic** for every other path. Paths are free text here, so this is not a parser. Known limits:
  *    - A lower-case word after a space ends the path: `D:\Work\first last\x` keeps `last\x`.
  *    - A tab, a double space or an apostrophe (`O'Brien`) inside a path ends it too.
@@ -87,44 +89,69 @@ const HEURISTIC: RegExp[] = [
   re(String.raw`(?<![\w.~:/-])/[A-Za-z]/[A-Z][\w.-]${FS}`),
 ];
 
+interface HomeForm {
+  text: string;
+  /** Windows homes (and their Git Bash / WSL spellings) ignore case; POSIX homes don't. */
+  noCase: boolean;
+}
+
 /** Every way an agent writes `home`: back or forward slashes, JSON-escaped, Git Bash and WSL mounts. */
-function homeForms(home: string): string[] {
+function homeForms(home: string): HomeForm[] {
   let h = home.replace(/[\\/]+$/, "");
   const bash = /^\/([A-Za-z])\/(.*)$/.exec(h);
   if (bash && !/^\/(?:home|root|Users)\//.test(h)) h = `${bash[1]}:\\${bash[2].replace(/\//g, "\\")}`;
-  const forms = new Set<string>([h, h.replace(/\//g, "\\"), h.replace(/\\/g, "/"), h.replace(/[\\/]/g, "\\\\")]);
   const drive = /^([A-Za-z]):[\\/](.*)$/.exec(h);
+  const texts = new Set<string>([h, h.replace(/\\/g, "/")]);
   if (drive) {
+    texts.add(h.replace(/\//g, "\\"));
+    texts.add(h.replace(/[\\/]/g, "\\\\"));
     const rest = drive[2].replace(/\\/g, "/");
-    forms.add(`/${drive[1]}/${rest}`);
-    forms.add(`/mnt/${drive[1]}/${rest}`);
+    texts.add(`/${drive[1]}/${rest}`);
+    texts.add(`/mnt/${drive[1]}/${rest}`);
   }
   // A home shorter than `/x/y` is too generic to replace exactly (`/`, `/root` is handled by the heuristics).
-  return [...forms].filter((f) => f.length >= 6).sort((a, b) => b.length - a.length);
+  return [...texts].filter((t) => t.length >= 6).map((text) => ({ text, noCase: Boolean(drive) }));
 }
 
+/** Regex syntax characters. Escaping anything else (such as `-`) is an error under the `u` flag. */
+const SYNTAX = /[\^$\\.*+?()[\]{}|/]/;
+
 /**
- * Escape `s` for a regex and make only its letters case-insensitive (`[cC]:\\[uU]sers…`). Windows paths ignore
- * case, but the `i` flag would also make `\p{Lu}` in the path tail match lower-case prose.
+ * Escape `s` for a `u`-flag regex. With `noCase`, letters become `[aA]` classes: Windows paths ignore case, but
+ * the `i` flag would also make `\p{Lu}` in the path tail match lower-case prose.
  */
-const literalNoCase = (s: string) =>
-  [...s]
+function literal(s: string, noCase: boolean): string {
+  return [...s]
     .map((ch) => {
       const lo = ch.toLowerCase();
       const up = ch.toUpperCase();
-      if (lo !== up) return `[${lo}${up}]`;
-      return /[.*+?^${}()|[\]\\/-]/.test(ch) ? `\\${ch}` : ch;
+      if (noCase && lo !== up) return `[${lo}${up}]`;
+      return SYNTAX.test(ch) ? `\\${ch}` : ch;
     })
     .join("");
+}
+
+/**
+ * What the exact pass takes after the home, so that anything starting with this machine's home is hidden whole:
+ * the rest of a longer folder name (`<home>2`, `<home>-old`, `<home>.old`, `<home>é`; a dot only when a letter or
+ * digit follows, so a full stop stays) and words after a space that start with an upper-case letter or a digit
+ * (`<home> Last`, `<home> 2`), but not across sentence punctuation.
+ */
+const LONGER = String.raw`(?:[\p{L}\p{N}_-]|\.(?=[\p{L}\p{N}]))*(?:(?<![.,:;!?]) ${CAP}[^${STOP}\\/]*)*`;
 const exactCache = new Map<string, RegExp[]>();
 
 function exactPatterns(homes: string[]): RegExp[] {
   const key = homes.join("\0");
   let pats = exactCache.get(key);
   if (!pats) {
-    const forms = [...new Set(homes.flatMap(homeForms))].sort((a, b) => b.length - a.length);
-    // The home, not followed by more of a folder name, then whatever path follows it.
-    pats = forms.map((f) => re(String.raw`(?<![\p{L}\p{N}])${literalNoCase(f)}(?![\p{L}\p{N}_-])(?:[\\/]+${ANY})?`));
+    const seen = new Set<string>();
+    const forms = homes
+      .flatMap(homeForms)
+      .filter((f) => !seen.has(`${f.noCase}:${f.text}`) && seen.add(`${f.noCase}:${f.text}`))
+      .sort((a, b) => b.text.length - a.text.length);
+    // The home, the rest of any longer folder or user name, then whatever path follows it. No left boundary: this
+    // machine's home is hidden wherever it appears, even glued to a preceding word (`backupC:\Users\…`).
+    pats = forms.map((f) => re(String.raw`${literal(f.text, f.noCase)}${LONGER}(?:[\\/]+${ANY})?`));
     exactCache.set(key, pats);
   }
   return pats;
