@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import os from "node:os";
+import path from "node:path";
 import { scrubMachinePaths } from "../src/core/redact.js";
 import { makeStore } from "./helpers.js";
 
@@ -99,6 +101,61 @@ describe("scrubMachinePaths", () => {
     "~/.claude/skills/next-steps and ~/.agents/skills",
     "AC-1: works; deps T-3>T-2; and/or; C: drive is full",
     "file:///not-a-drive and ./scripts/x.py",
+  ])("leaves %j untouched", (input) => {
+    expect(scrubMachinePaths(input)).toBe(input);
+  });
+});
+
+describe("scrubMachinePaths: the exporting machine's own home folder (exact)", () => {
+  const homes = ["C:\\Users\\admin 01x"]; // deliberately lower-case and spaced: the heuristics alone would leak it
+  it.each([
+    ["at C:\\Users\\admin 01x\\proj\\x.ts ok", "at <path> ok"],
+    ["fwd C:/Users/admin 01x/proj ok", "fwd <path> ok"],
+    ['{"p":"C:\\\\Users\\\\admin 01x\\\\proj"}', '{"p":"<path>"}'],
+    ["bash /c/Users/admin 01x/proj ok", "bash <path> ok"],
+    ["wsl /mnt/c/Users/admin 01x/proj ok", "wsl <path> ok"],
+    ["case c:\\users\\ADMIN 01X\\x ok", "case <path> ok"],
+    ["bare C:\\Users\\admin 01x then", "bare <path> then"],
+  ])("replaces %j", (input, expected) => {
+    expect(scrubMachinePaths(input, { homes })).toBe(expected);
+  });
+
+  it("does not match a longer folder name that only starts with the home path", () => {
+    expect(scrubMachinePaths("C:\\Users\\admin 01xyz\\a", { homes })).not.toBe("<path>yz\\a");
+  });
+
+  it("uses this machine's home folder by default", () => {
+    const home = os.homedir();
+    expect(scrubMachinePaths(`see ${home}${path.sep}notes.txt ok`)).toBe("see <path> ok");
+  });
+});
+
+describe("scrubMachinePaths: review-3 fixes", () => {
+  it.each([
+    // 1. A number after a user name.
+    ["C:\\Users\\Admin 01\\proj\\client-acme\\x ok", "<path> ok"],
+    ["C:/Users/Admin 01/proj ok", "<path> ok"],
+    ["/home/User 2/proj ok", "<path> ok"],
+    // 2. Non-ASCII capitals and numbers.
+    ["C:\\Users\\Ana Álvarez\\x ok", "<path> ok"],
+    ["C:\\Users\\Søren Øster ran", "<path> ran"],
+    ["/home/Łukasz Żółć/x ok", "<path> ok"],
+    ["D:\\Ömer Özil\\Dokumente\\x ok", "<path> ok"],
+    // Lower-case surname particles inside a user name.
+    ["C:\\Users\\Jan van der Berg\\x ok", "<path> ok"],
+    ["/home/Ludwig von Mises ran", "<path> ran"],
+    ["C:\\Users\\Maria de la Cruz and more", "<path> and more"],
+    // 3. Initials in a user name.
+    ["C:\\Users\\J. R. Smith\\x ok", "<path> ok"],
+    ["C:\\Users\\J.R. Smith\\x ok", "<path> ok"],
+  ])("replaces %j", (input, expected) => {
+    expect(scrubMachinePaths(input)).toBe(expected);
+  });
+
+  it.each([
+    // 4. API routes are not paths.
+    "GET /users/42/posts",
+    "route /users/:id and /home",
   ])("leaves %j untouched", (input) => {
     expect(scrubMachinePaths(input)).toBe(input);
   });
