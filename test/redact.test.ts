@@ -19,6 +19,31 @@ describe("scrubMachinePaths", () => {
   });
 
   it.each([
+    // Segments with spaces (af-iil8q): continuation words are capitalised or numeric and end in a separator.
+    ["at D:\\Program Files\\Git\\bin now", "at <path> now"],
+    ["home C:\\Users\\First Last\\proj\\x.ts:12 ok", "home <path> ok"],
+    ["fwd C:/Users/First Last/src end", "fwd <path> end"],
+    ["mount /c/Program Files/Git/api/stream here", "mount <path> here"],
+    ["in D:\\New Folder 2\\x done", "in <path> done"],
+    // WSL, UNC and /root.
+    ["wsl /mnt/c/Users/alice/x and /mnt/d/Projects", "wsl <path> and <path>"],
+    ["share \\\\server\\share\\dir\\f.txt copied", "share <path> copied"],
+    ["key /root/.ssh/config", "key <path>"],
+  ])("replaces %j (spaces, WSL, UNC, /root)", (input, expected) => {
+    expect(scrubMachinePaths(input)).toBe(expected);
+  });
+
+  it.each([
+    ["see D:\\x for and/or more", "see <path> for and/or more"],
+    ["D:/Projects/workspace map", "<path> map"],
+  ])("stops a path at prose: %j", (input, expected) => {
+    expect(scrubMachinePaths(input)).toBe(expected);
+  });
+
+  it.each([
+    "pick a/b or /a/b and 3/4, and/or",
+    "/tmp/x and /var/log/syslog",
+    "the /c/ switch and /d/x in prose",
     "src/core/store.ts:120 and docs/specs/software-factory/tasks.md#T-1",
     "https://github.com/synthet/synthet-agent-flow/pull/26",
     "~/.claude/skills/next-steps and ~/.agents/skills",
@@ -26,6 +51,20 @@ describe("scrubMachinePaths", () => {
     "file:///not-a-drive and ./scripts/x.py",
   ])("leaves %j untouched", (input) => {
     expect(scrubMachinePaths(input)).toBe(input);
+  });
+});
+
+describe("scrubMachinePaths performance", () => {
+  it("stays linear on long runs of capitalised words (no catastrophic backtracking)", () => {
+    const bs = "\\";
+    const inputs = [
+      `C:${bs}Users${bs}${"Word ".repeat(50000)}`,
+      `C:${bs}U ${"Ab Cd ".repeat(20000)}Ef${bs}g`,
+      `/c/P${" A/".repeat(30000)}`,
+    ];
+    const start = Date.now();
+    for (const text of inputs) scrubMachinePaths(text);
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 });
 
