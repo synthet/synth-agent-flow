@@ -2,6 +2,7 @@
   "name": "synthet-agent-flow",
   "version": "0.1.0",
   "description": "Agent-oriented project management: dependency-aware ready queue, atomic claims, MCP server, CLI, web Kanban dashboard and Claude Code plugin.",
+  "homepage": "https://synthet.github.io",
   "type": "module",
   "license": "MIT",
   "author": "synthet",
