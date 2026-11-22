@@ -1,4 +1,4 @@
-# synthet-agent-flow
+# Synth Agent Flow
 
 **Agent-oriented project management.** agent-flow is a ticket tracker built for coding agents. It gives them:
 - a **dependency-aware ready queue**,
