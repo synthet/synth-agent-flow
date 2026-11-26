@@ -322,3 +322,71 @@ describe("board moves", () => {
     expect(actionForMove("backlog", "done")).toBeNull();
   });
 });
+
+describe("lease length across transitions", () => {
+  const MIN = 60_000;
+  const until = (store: FlowStore, id: string) => Date.parse(store.get(id).lease_until as string);
+  /** Put a lease on a ticket directly, as an imported or hand-edited row could have one. */
+  const setLease = (store: FlowStore, id: string, ms: number) =>
+    store.db.prepare("UPDATE tickets SET lease_until = ? WHERE id = ?").run(ms, id);
+
+  it("start keeps a --lease 180 claim instead of cutting it to the default", () => {
+    const { store, clock } = makeStore();
+    const t = store.create({ title: "long work", status: "ready" }, H);
+    store.claim(t.id, A, { leaseMinutes: 180 });
+    const claimedUntil = clock.t + 180 * MIN;
+    expect(until(store, t.id)).toBe(claimedUntil);
+    clock.advance(1);
+    store.transition(t.id, "start", A);
+    expect(until(store, t.id)).toBe(claimedUntil);
+    // The reaper does not take it back at the default lease length.
+    clock.advance(60);
+    expect(store.reap()).toEqual([]);
+    expect(store.get(t.id).status).toBe("in_progress");
+  });
+
+  it("start extends a lease that ends sooner than the default", () => {
+    const { store, clock } = makeStore({ leaseMinutes: 30 });
+    const t = store.create({ title: "x", status: "ready" }, H);
+    store.claim(t.id, A, { leaseMinutes: 5 });
+    clock.advance(2);
+    store.transition(t.id, "start", A);
+    expect(until(store, t.id)).toBe(clock.t + 30 * MIN);
+  });
+
+  it("unblock gives a fresh lease when there is none and keeps a longer one", () => {
+    const { store, clock } = makeStore({ leaseMinutes: 30 });
+    const t = store.create({ title: "x", status: "ready" }, H);
+    store.claim(t.id, A);
+    store.transition(t.id, "start", A);
+    store.transition(t.id, "block", A, { reason: "waiting", unblockCondition: "api is up" });
+    expect(store.get(t.id).lease_until).toBeNull();
+    clock.advance(10);
+    store.transition(t.id, "unblock", A);
+    expect(until(store, t.id)).toBe(clock.t + 30 * MIN);
+
+    store.transition(t.id, "block", A, { reason: "again", unblockCondition: "api is up" });
+    const later = clock.t + 240 * MIN;
+    setLease(store, t.id, later);
+    store.transition(t.id, "unblock", A);
+    expect(until(store, t.id)).toBe(later);
+  });
+
+  it("reject gives a fresh lease when there is none and keeps a longer one", () => {
+    const { store, clock } = makeStore({ leaseMinutes: 30, requireHandoff: false, maxAttempts: 5 });
+    const t = store.create({ title: "x", status: "ready" }, H);
+    store.claim(t.id, A);
+    store.transition(t.id, "start", A);
+    store.transition(t.id, "submit", A);
+    expect(store.get(t.id).lease_until).toBeNull();
+    clock.advance(10);
+    store.transition(t.id, "reject", B, { reason: "1) fix it" });
+    expect(until(store, t.id)).toBe(clock.t + 30 * MIN);
+
+    store.transition(t.id, "submit", A);
+    const later = clock.t + 240 * MIN;
+    setLease(store, t.id, later);
+    store.transition(t.id, "reject", B, { reason: "2) still broken" });
+    expect(until(store, t.id)).toBe(later);
+  });
+});

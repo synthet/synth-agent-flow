@@ -728,6 +728,16 @@ export class FlowStore {
     });
   }
 
+  /**
+   * The lease a transition hands out: now + leaseMinutes, unless the ticket already holds a lease that ends later
+   * (`claim --lease 180`, a long heartbeat). Never shorten it, or the reaper expires long work early.
+   */
+  private keepLongerLease(t: Ticket, now: number): number {
+    const fresh = now + this.config.leaseMinutes * 60_000;
+    const current = t.lease_until ? Date.parse(t.lease_until) : Number.NaN;
+    return Number.isFinite(current) && current > fresh ? current : fresh;
+  }
+
   /** Apply a lifecycle action. See `states.ts` for the transition table. */
   transition(id: string, action: Action, actor: string, opts: TransitionOptions = {}): Ticket {
     if (action === "claim") return this.claim(id, actor);
@@ -759,7 +769,7 @@ export class FlowStore {
 
       switch (action) {
         case "start":
-          sets.lease_until = now + this.config.leaseMinutes * 60_000;
+          sets.lease_until = this.keepLongerLease(t, now);
           break;
         case "release":
           Object.assign(sets, { owner: null, lease_until: null, claimed_at: null });
@@ -771,7 +781,7 @@ export class FlowStore {
           break;
         case "unblock":
           Object.assign(sets, { blocked_reason: null, unblock_condition: null });
-          if (t.owner) sets.lease_until = now + this.config.leaseMinutes * 60_000;
+          if (t.owner) sets.lease_until = this.keepLongerLease(t, now);
           break;
         case "submit":
         case "close": {
@@ -810,7 +820,7 @@ export class FlowStore {
         case "reject": {
           const rework = t.rework_count + 1;
           sets.rework_count = rework;
-          sets.lease_until = now + this.config.leaseMinutes * 60_000;
+          sets.lease_until = this.keepLongerLease(t, now);
           if (rework >= this.config.maxAttempts) {
             to = "blocked";
             event = "ticket.escalated";
