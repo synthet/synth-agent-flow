@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import path from "node:path";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { canonical } from "./canonical.js";
-import { LANES, PRIORITIES, STATUSES, TICKET_TYPES, type FlowConfig, type Status } from "./config.js";
+import { currentHost, LANES, PRIORITIES, sameHost, STATUSES, TICKET_TYPES, type FlowConfig, type Status } from "./config.js";
 import { openDatabase } from "./db.js";
 import { FlowError } from "./errors.js";
 import { renameWithRetry } from "./fsutil.js";
@@ -40,6 +40,8 @@ export interface StoreOptions {
   /** Where `tickets.jsonl` is written when `config.autoExport` is on. */
   snapshotPath?: string | null;
   now?: () => number;
+  /** This host's identity for the `claims.home` guard. Read at claim time; defaults to `currentHost()`. */
+  host?: () => string;
 }
 
 export interface TransitionOptions {
@@ -78,6 +80,7 @@ export class FlowStore {
   readonly config: FlowConfig;
   private readonly snapshotPath: string | null;
   private readonly now: () => number;
+  private readonly host: () => string;
   private readonly listeners = new Set<EventListener>();
   private pending: FlowEvent[] = [];
   private depth = 0;
@@ -89,6 +92,7 @@ export class FlowStore {
     this.config = opts.config;
     this.snapshotPath = opts.snapshotPath ?? null;
     this.now = opts.now ?? Date.now;
+    this.host = opts.host ?? (() => currentHost());
   }
 
   static open(file: string, opts: StoreOptions): FlowStore {
@@ -638,6 +642,7 @@ export class FlowStore {
    * Fails with CLAIM_CONFLICT if another agent won, WIP_LIMIT if the agent is at its limit.
    */
   claim(id: string | null, actor: string, opts: { filter?: ReadyFilter; leaseMinutes?: number } = {}): Ticket {
+    this.assertClaimHome();
     return this.tx(() => {
       this.reapInTx();
       const perAgent = this.config.wip.perAgent;
@@ -687,6 +692,26 @@ export class FlowStore {
       this.emit("ticket.claimed", actor, target, { lease_until: new Date(lease).toISOString() });
       this.recomputeParent(target, actor);
       return this.get(target);
+    });
+  }
+
+  /**
+   * With `claims.home` set, only that host may claim (ADR 0002, rollout step 1): each PC has its own flow.db, so two
+   * hosts claiming the same ticket would race and the snapshot merge would silently keep one. Only new claims are
+   * refused; heartbeat, release and the rest of the lifecycle of a held ticket are not.
+   */
+  private assertClaimHome(): void {
+    const home = this.config.claims.home;
+    if (!home) return;
+    const host = this.host();
+    if (sameHost(home, host)) return;
+    throw new FlowError("NOT_CLAIM_HOME", `claims for this project are made on its claim home ${home}; this host is ${host}`, {
+      details: { home, host },
+      nextSteps: [
+        `claim on ${home}`,
+        `if this host is ${home} under another name: set AGENT_FLOW_HOST=${home}`,
+        "to move the claim home: agent-flow config set claims.home <host>",
+      ],
     });
   }
 

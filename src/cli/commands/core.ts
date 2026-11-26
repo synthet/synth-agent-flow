@@ -5,7 +5,7 @@ import { FlowError } from "../../core/errors.js";
 import { currentBranch, worktreeTop } from "../../core/paths.js";
 import { applyAction, branchFor, checkDod, claimTicket, submitTicket } from "../../core/service.js";
 import type { Action } from "../../core/states.js";
-import { STATUSES, type Status } from "../../core/config.js";
+import { currentHost, STATUSES, type Status } from "../../core/config.js";
 import { initWorkspace } from "../../core/workspace.js";
 import { registerQuietly } from "../../core/registry.js";
 import type { DepKind, Verdict } from "../../core/types.js";
@@ -668,9 +668,17 @@ register(
     usage: "where",
     run(ctx) {
       const ws = ctx.ws();
-      ctx.print({ ...ws.paths, worktree: worktreeTop(ctx.cwd), branch: currentBranch(ctx.cwd), actor: ctx.actor }, () =>
-        Object.entries({ ...ws.paths, worktree: worktreeTop(ctx.cwd), branch: currentBranch(ctx.cwd), actor: ctx.actor })
-          .map(([k, v]) => `${k.padEnd(10)} ${v}`)
+      const info = {
+        ...ws.paths,
+        worktree: worktreeTop(ctx.cwd),
+        branch: currentBranch(ctx.cwd),
+        actor: ctx.actor,
+        host: currentHost(),
+        claims_home: ws.config.claims.home,
+      };
+      ctx.print(info, () =>
+        Object.entries(info)
+          .map(([k, v]) => `${k.padEnd(11)} ${k === "claims_home" && v === null ? "(any host)" : v}`)
           .join("\n"),
       );
     },

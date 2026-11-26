@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
@@ -123,6 +124,17 @@ export const configSchema = z.object({
       heartbeatMinutes: z.number().int().min(1).default(5),
     })
     .prefault({}),
+  /**
+   * Cross-host claims (ADR 0002). `home` names the host whose flow.db is authoritative for claims: with it set, a claim
+   * on any other host is refused (NOT_CLAIM_HOME). Heartbeat and release are unaffected. `transport: "mailbox"` is
+   * reserved for remote claims through the mailbox fabric; until those land it refuses off-home claims the same way.
+   */
+  claims: z
+    .object({
+      home: z.string().trim().min(1).nullable().default(null),
+      transport: z.enum(["local", "mailbox"]).default("local"),
+    })
+    .prefault({}),
   server: z
     .object({
       host: z.string().default("127.0.0.1"),
@@ -135,6 +147,16 @@ export type FlowConfig = z.infer<typeof configSchema>;
 
 export function defaultConfig(overrides: Partial<FlowConfig> = {}): FlowConfig {
   return configSchema.parse(overrides);
+}
+
+/** This host's identity for `claims.home`: `AGENT_FLOW_HOST` when set and not blank, else `os.hostname()`. */
+export function currentHost(env: NodeJS.ProcessEnv = process.env): string {
+  return env.AGENT_FLOW_HOST?.trim() || os.hostname();
+}
+
+/** Host names compare case-insensitively (Windows reports them upper case, other tools lower case). */
+export function sameHost(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 export function loadConfig(file: string): FlowConfig {

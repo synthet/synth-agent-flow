@@ -17,6 +17,7 @@ export type FlowErrorCode =
   | "CONFIRMATION_REQUIRED"
   | "EXTERNAL_FAILURE"
   | "UNAUTHORIZED"
+  | "NOT_CLAIM_HOME"
   | "INTERNAL";
 
 export interface FlowErrorShape {

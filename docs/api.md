@@ -6,7 +6,7 @@ All surfaces share one service layer and one error envelope:
 { "error": { "code": "CLAIM_CONFLICT", "message": "…", "details": {}, "retryable": true, "next_steps": ["…"] } }
 ```
 
-Codes are `NOT_FOUND`, `INVALID_ARGUMENT`, `INVALID_TRANSITION`, `CLAIM_CONFLICT`, `NOT_OWNER`, `WIP_LIMIT`, `BLOCKED_BY_DEPENDENCY`, `GATE_FAILED`, `CYCLE`, `VERSION_CONFLICT`, `NOT_INITIALIZED`, `CONFIRMATION_REQUIRED`, `EXTERNAL_FAILURE`, `UNAUTHORIZED` and `INTERNAL`.
+Codes are `NOT_FOUND`, `INVALID_ARGUMENT`, `INVALID_TRANSITION`, `CLAIM_CONFLICT`, `NOT_OWNER`, `WIP_LIMIT`, `BLOCKED_BY_DEPENDENCY`, `GATE_FAILED`, `CYCLE`, `VERSION_CONFLICT`, `NOT_INITIALIZED`, `CONFIRMATION_REQUIRED`, `EXTERNAL_FAILURE`, `UNAUTHORIZED`, `NOT_CLAIM_HOME` and `INTERNAL`.
 
 ## CLI
 
@@ -119,9 +119,12 @@ Hooks always exit 0 with `{}` on malformed input or internal errors (they fail o
   "swarm": { "enabled": false, "path": null, "harnesses": [], "autoApproveOnMajority": false, "timeoutMs": 300000 },
   "wiki": { "enabled": false, "root": null, "outDir": "wiki/notes/agent-flow", "ingest": true, "bin": "llmwiki" },
   "hooks": { "taskCompletedDod": false, "handoffOnStop": true, "untrackedNudge": true, "heartbeatMinutes": 5 },
+  "claims": { "home": null, "transport": "local" },
   "server": { "host": "127.0.0.1", "port": 8791 }
 }
 ```
+
+`claims.home` names the one host allowed to claim (ADR 0002, rollout step 1). Each PC keeps its own `flow.db`, so two PCs could otherwise claim the same ticket and the snapshot merge would keep only one. With it set, `claim` and `claim --next` on any other host fail with `NOT_CLAIM_HOME`, naming the home and this host. Heartbeat, release and the rest of a held ticket's lifecycle still work. Host names compare case-insensitively; this host is `AGENT_FLOW_HOST`, else `os.hostname()` (`agent-flow where` shows both). `transport: "mailbox"` is reserved for remote claims through the mailbox fabric and today refuses off-home claims the same way.
 
 Environment overrides:
 
@@ -130,6 +133,7 @@ Environment overrides:
 | `AGENT_FLOW_HOME` | project root |
 | `AGENT_FLOW_DB` | DB file |
 | `AGENT_FLOW_ACTOR` | actor id |
+| `AGENT_FLOW_HOST` | this host's name for `claims.home` (default `os.hostname()`) |
 | `AGENT_FLOW_BIN` | how the plugin, mod and installer invoke the CLI |
 | `AGENT_MAIL_BIN` | the mailbox CLI |
 | `AGENT_FLOW_SWARM_PATH` | the swarm checkout |

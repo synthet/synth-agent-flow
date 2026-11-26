@@ -104,6 +104,7 @@ function sendError(res: ServerResponse, err: unknown): void {
     GATE_FAILED: 422,
     CYCLE: 422,
     NOT_OWNER: 403,
+    NOT_CLAIM_HOME: 403,
     UNAUTHORIZED: 401,
     CONFIRMATION_REQUIRED: 428,
   };
