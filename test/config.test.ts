@@ -18,6 +18,7 @@ describe("config defaults", () => {
     expect(c.jev).toEqual({ path: null, model: null, onSubmit: false, timeoutMs: 120000 });
     expect(c.hooks).toEqual({ taskCompletedDod: false, handoffOnStop: true, untrackedNudge: true, heartbeatMinutes: 5 });
     expect(c.server).toEqual({ host: "127.0.0.1", port: 8791 });
+    expect(c.claims).toEqual({ home: null, transport: "local" });
   });
 
   it("keeps the other defaults when a section is set partly", () => {

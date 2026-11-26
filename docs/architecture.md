@@ -41,6 +41,7 @@ A single transition table decides which actions are legal from which statuses. S
 
 | Gate | Rule |
 |---|---|
+| claim | with `claims.home` set, only that host may claim (`NOT_CLAIM_HOME` elsewhere); heartbeat and release are not gated |
 | submit | handoff note since claim (`requireHandoff`), DoD passed, no AC marked Failed |
 | approve | every AC Verified (Verified requires evidence), approver ≠ owner (`allowSelfApprove`). An agent or system approver must also never have claimed, started or submitted the ticket, and must have recorded the latest `Verified` on every AC itself (`independentReview`, read from the event log). Humans approve on the owner's verdicts. |
 | close | only when `requireReview` is off, or with `--force` from a human |

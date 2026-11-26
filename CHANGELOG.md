@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- `claims.home` (ADR 0002, step 1): with it set, a claim on any other host is refused with `NOT_CLAIM_HOME`, naming the claim home, so two PCs can no longer claim the same ticket. Heartbeat and release still work. The host is `AGENT_FLOW_HOST`, else `os.hostname()`, compared case-insensitively; `agent-flow where` shows it. `claims.transport` (`local` or `mailbox`) is validated; the mailbox transport comes in a later step.
 - Independent review: `agent-flow review <id> --brief` (MCP `flow_review_brief`) returns a fresh reviewer identity and a complete review prompt for a subagent. The `flow-request-review` skill hands that prompt to the `flow-reviewer` agent, and `flow-complete` now ends by requesting review. Plugin 0.2.0.
 - `run.cmd`: starts the dashboard on Windows, or opens it if it is already running.
 - CI runs on `windows-latest`.
