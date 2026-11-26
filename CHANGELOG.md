@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - The dashboard default port is now 8791, because 8790 clashes with AI Quotas. Projects with `server.port` set in their config keep it.
 
 ### Fixed
+- `start`, `unblock` and `reject` no longer cut a longer lease back to `leaseMinutes`. A `claim --lease 180` followed by the first-commit `start` hook used to drop to 30 minutes, and the reaper expired long work.
 - Integrations launch Windows `.cmd` and `.bat` CLIs safely: paths with spaces work, bare npm-installed names are found, and arguments are escaped for `cmd.exe`, so an argument cannot run a second command. An argument with a newline is refused, because `cmd.exe` would cut it short.
 - `runShell` keeps quotes on Windows, so a DoD command with a quoted path works.
 - An agent can import a task file with checked items, and a failed snapshot export is retried by the next transaction.
